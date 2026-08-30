@@ -1,0 +1,32 @@
+[project]
+name = "docker-learning-app"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Naman Singh", email = "namansinghpatel@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.141.1",
+    "psycopg>=3.3.4",
+    "pyside6>=6.11.2",
+    "python-dotenv>=1.2.3",
+    "requests>=2.34.2",
+    "uvicorn[standard]>=0.52.4",
+]
+
+[project.scripts]
+docker-learning-app = "docker_learning_app:main"
+
+[build-system]
+requires = ["uv_build>=0.12.7,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
