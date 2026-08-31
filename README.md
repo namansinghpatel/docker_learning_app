@@ -23,6 +23,74 @@ The app is a simple **Message Manager** with full CRUD: Create, Read, Update, De
 | ✏️ UPDATE  | `PUT`       | Update message | `UPDATE` |
 | 🗑️ DELETE | `DELETE`    | Delete message | `DELETE` |
 
+The backend can be reached the same way regardless of what's calling it — the GUI, a
+browser, or `curl` all just speak HTTP/JSON to it.
+
+### 🔀 Flow — No Docker (native)
+
+Everything is a plain process on your machine, all talking over `localhost`:
+
+```text
+   🖥️ PySide6 GUI          🌐 Browser              💻 curl
+   uv run gui/main.py      localhost:8000/docs     localhost:8000
+          │                      │                      │
+          └──────────────────────┼──────────────────────┘
+                                 │  HTTP/JSON
+                                 ▼
+                     ⚡ FastAPI Backend  (localhost:8000)
+                     uv run uvicorn backend.main:app
+                                  │
+                                  │  SQL
+                                  ▼
+                     🐘 PostgreSQL  (localhost:5432)
+                     native service · db = docker_learning
+```
+
+All four callers (GUI / browser / curl) are just alternative HTTP clients — none of them
+talk to PostgreSQL directly, only the backend does.
+
+### 🔀 Flow — With Docker (`docker compose`)
+
+Same four callers, but the backend, GUI, and database are now separate **containers** on
+their own Docker network (`app_network`). Containers reach each other by **service name**
+(`backend`, `db`); anything outside Docker (your browser, `curl`, a native GUI, `psql`)
+reaches them through the **published host ports** instead:
+
+```text
+  Host machine ─────────────────────────────────────────────────────────────
+   🌐 Browser              💻 curl                🖥️ GUI (native, optional)
+   localhost:8000/docs     localhost:8000          BACKEND_URL=localhost:8000
+          │                      │                            │
+          └──────────────────────┼────────────────────────────┘
+                                 │ published port 8000:8000
+  ────────────────────────────── │  ─────────────────────────────────────
+  Docker network "app_network" ──▼  ─────────────────────────────────────
+                     ┌─────────────────────────┐
+                     │ 🚢 backend container    │ ⚡ FastAPI (uvicorn), :8000
+                     └────────────┬────────────┘
+                                  │ SQL → db:5432 (internal DNS, always 5432)
+                                  ▼
+                     ┌─────────────────────────┐
+                     │ 🚢 db container         │ 🐘 PostgreSQL 16, :5432
+                     │    volume: db_data      │
+                     └────────────┬────────────┘
+                                  │ published port 5432:5432
+  ─────────────────────────────── │ ──────────────────────────────────────
+   Host machine                   ▼
+                     💻 psql -h localhost -p 5432
+
+                     ┌─────────────────────────┐
+                     │ 🚢 gui container (opt.) │ 🖥️ PySide6
+                     │  → http://backend:8000  │ (internal DNS, X11 required)
+                     └─────────────────────────┘
+```
+
+Key difference from the native flow: `http://backend:8000` and `db:5432` only resolve
+**inside** `app_network` — that's how the `gui`/`backend` containers find each other.
+Everything outside Docker (browser, curl, a native GUI, `psql`) always uses `localhost` +
+whichever host port was published (see "How the services find each other" and "Running
+native + Docker at the same time" further down for the configurable-port details).
+
 ## 📁 Project Structure
 
 ```text
