@@ -7,13 +7,22 @@ authors = [
     { name = "Naman Singh", email = "namansinghpatel@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = [
+dependencies = []
+
+# Split by service so each one can be installed - and containerized - on its own.
+# Local full-stack dev:  uv sync --all-extras
+# Backend only:          uv sync --extra backend
+# GUI only:              uv sync --extra gui
+[project.optional-dependencies]
+backend = [
     "fastapi>=0.141.1",
     "psycopg>=3.3.4",
-    "pyside6>=6.11.2",
     "python-dotenv>=1.2.3",
-    "requests>=2.34.2",
     "uvicorn[standard]>=0.52.4",
+]
+gui = [
+    "pyside6>=6.11.2",
+    "requests>=2.34.2",
 ]
 
 [project.scripts]

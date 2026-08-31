@@ -1,316 +1,80 @@
 # 🐳 Docker Learning App
 
-A small learning project designed to understand how a **GUI application**, **FastAPI backend**, and **PostgreSQL database** work together.
+A small learning project for understanding how a **GUI**, a **backend API**, and a **database**
+work together — first without Docker, then with it.
 
-The project is intentionally kept small so that the architecture and communication between each component are easy to understand.
+**Stack:** PySide6 (GUI) → FastAPI (backend) → PostgreSQL (database), using `psycopg` and
+managed with `uv`.
 
-Docker and Docker Compose will be introduced in the next stage after the non-Docker application is fully understood.
-
----
-
-## 🎯 Project Goal
-
-The purpose of this project is to learn the fundamentals of building a multi-component application:
-
-* 🖥️ PySide6 GUI
-* ⚡ FastAPI backend
-* 🐘 PostgreSQL database
-* 🐍 Python
-* 📦 `uv` for Python dependency management
-* 🧪 Pytest for automated testing
-* 🐳 Docker
-* 🎼 Docker Compose
-
-The application is a simple **Message Manager** supporting CRUD operations:
-
-* ➕ Create messages
-* 📥 Get messages
-* ✏️ Update messages
-* 🗑️ Delete messages
+The app is a simple **Message Manager** with full CRUD: Create, Read, Update, Delete.
 
 ---
 
-# 🏗️ Architecture
-
-## Current Architecture — Before Docker
+## 🏗️ Architecture
 
 ```text
-                         🖥️ USER
-                            │
-                            ▼
-                  ┌──────────────────┐
-                  │   🖥️ PySide6 GUI │
-                  │                  │
-                  │  📥 GET          │
-                  │  ➕ CREATE       │
-                  │  ✏️ UPDATE       │
-                  │  🗑️ DELETE       │
-                  └────────┬─────────┘
-                           │
-                           │ HTTP / JSON
-                           ▼
-                  ┌──────────────────┐
-                  │   ⚡ FastAPI     │
-                  │     Backend      │
-                  │                  │
-                  │ GET /messages    │
-                  │ POST /messages   │
-                  │ PUT /messages/{id}
-                  │ DELETE /messages/{id}
-                  └────────┬─────────┘
-                           │
-                           │ SQL
-                           ▼
-                  ┌──────────────────┐
-                  │ 🐘 PostgreSQL    │
-                  │                  │
-                  │ docker_learning  │
-                  │                  │
-                  │   messages       │
-                  └──────────────────┘
+🖥️ PySide6 GUI  --HTTP/JSON-->  ⚡ FastAPI Backend  --SQL-->  🐘 PostgreSQL
 ```
+
+| GUI action | HTTP        | Backend        | SQL      |
+| ---------- | ----------- | -------------- | -------- |
+| 📥 GET     | `GET`       | Read messages  | `SELECT` |
+| ➕ CREATE  | `POST`      | Create message | `INSERT` |
+| ✏️ UPDATE  | `PUT`       | Update message | `UPDATE` |
+| 🗑️ DELETE | `DELETE`    | Delete message | `DELETE` |
+
+## 📁 Project Structure
+
+```text
+docker_learning_app/
+├── README.md
+├── pyproject.toml / uv.lock
+├── .env                    # DB credentials (used for local + docker compose)
+├── docker-compose.yml
+├── backend/
+│   ├── Dockerfile
+│   └── main.py             # FastAPI app
+├── database/
+│   ├── database.py         # psycopg data access layer
+│   └── init.sql            # auto-creates the `messages` table in Postgres
+├── gui/
+│   ├── Dockerfile
+│   └── main.py             # PySide6 app
+└── tests/
+    └── test_database.py
+```
+
+The backend exposes `GET/POST /messages`, `PUT/DELETE /messages/{id}`. Interactive docs
+are at `/docs` (Swagger) and `/redoc`.
 
 ---
 
-# 🔄 Application Flow
+## 🐍 Run Locally (no Docker)
 
-The application follows a three-layer architecture:
+Requires PostgreSQL running locally and `uv` installed.
 
-```text
-🖥️ GUI
-  │
-  │ HTTP / JSON
-  ▼
-⚡ Backend
-  │
-  │ SQL
-  ▼
-🐘 PostgreSQL
+```bash
+# 1) install deps (everything - backend + gui + dev tools)
+uv sync --all-extras
+
+# 2) create DB, user, and table (once)
+sudo -u postgres psql -c "CREATE DATABASE docker_learning;"
+sudo -u postgres psql -c "CREATE USER learning_user WITH PASSWORD 'learning_password';"
+sudo -u postgres psql -d docker_learning -c "GRANT ALL PRIVILEGES ON DATABASE docker_learning TO learning_user;"
+psql -U learning_user -d docker_learning -h localhost -f database/init.sql
+
+# 3) run backend
+uv run uvicorn backend.main:app --reload
+# → browser: http://localhost:8000/docs   (see "Testing it" below for more)
+
+# 4) run GUI (separate terminal)
+uv run python gui/main.py
+
+# 5) run tests
+uv run python -m pytest -v
 ```
 
-### Example — Create Message
-
-```text
-👤 User
-  │
-  │ enters "Hello Docker"
-  ▼
-🖥️ PySide6 GUI
-  │
-  │ POST /messages
-  │
-  │ {
-  │   "message": "Hello Docker"
-  │ }
-  ▼
-⚡ FastAPI
-  │
-  │ INSERT INTO messages
-  ▼
-🐘 PostgreSQL
-  │
-  │ message stored
-  ▼
-⚡ FastAPI
-  │
-  │ JSON response
-  ▼
-🖥️ PySide6 GUI
-  │
-  ▼
-📋 Message displayed
-```
-
----
-
-# 🔄 CRUD Architecture
-
-The four GUI operations map directly to HTTP operations and SQL operations.
-
-| 🖥️ GUI    | 🌐 HTTP  | ⚡ Backend      | 🐘 PostgreSQL |
-| ---------- | -------- | -------------- | ------------- |
-| 📥 GET     | `GET`    | Read messages  | `SELECT`      |
-| ➕ CREATE   | `POST`   | Create message | `INSERT`      |
-| ✏️ UPDATE  | `PUT`    | Update message | `UPDATE`      |
-| 🗑️ DELETE | `DELETE` | Delete message | `DELETE`      |
-
-```text
-             CRUD
-              │
-     ┌────────┼────────┐
-     │        │        │
-   CREATE    READ    UPDATE    DELETE
-     │        │        │        │
-    POST      GET      PUT     DELETE
-     │        │        │        │
-     └────────┴────────┴────────┘
-                    │
-                    ▼
-              🐘 PostgreSQL
-```
-
----
-
-# 📁 Project Structure
-
-```text
-Docker-Learning-App/
-│
-├── 📄 README.md
-├── 📄 pyproject.toml
-├── 📄 uv.lock
-├── 📄 .python-version
-├── 🔐 .env
-│
-├── ⚡ backend/
-│   ├── 📄 __init__.py
-│   └── 📄 main.py
-│
-├── 🐘 database/
-│   ├── 📄 __init__.py
-│   ├── 📄 database.py
-│   └── 📄 init.sql
-│
-├── 🖥️ gui/
-│   └── 📄 main.py
-│
-└── 🧪 tests/
-    └── 📄 test_database.py
-```
-
----
-
-# 🧩 Components
-
-## 🖥️ GUI — PySide6
-
-Location:
-
-```text
-gui/main.py
-```
-
-The GUI provides four operations:
-
-```text
-📥 GET
-➕ CREATE
-✏️ UPDATE
-🗑️ DELETE
-```
-
-It communicates with the backend using HTTP requests.
-
-```text
-GUI
- │
- │ HTTP
- ▼
-FastAPI
-```
-
-The GUI does **not** communicate directly with PostgreSQL.
-
----
-
-## ⚡ Backend — FastAPI
-
-Location:
-
-```text
-backend/main.py
-```
-
-The backend exposes REST API endpoints.
-
-Responsibilities:
-
-* 🌐 Receive HTTP requests
-* ✅ Validate input
-* 🧠 Handle application logic
-* 🐘 Call the database layer
-* 📦 Return JSON responses
-
----
-
-## 🐘 Database Layer
-
-Location:
-
-```text
-database/database.py
-```
-
-Responsibilities:
-
-* 🔌 PostgreSQL connection
-* ➕ Insert messages
-* 📥 Read messages
-* ✏️ Update messages
-* 🗑️ Delete messages
-
-The database layer uses:
-
-```text
-psycopg
-```
-
-to communicate with PostgreSQL.
-
----
-
-# 🗄️ Database Design
-
-Database:
-
-```text
-docker_learning
-```
-
-Schema:
-
-```text
-public
-```
-
-Table:
-
-```text
-messages
-```
-
-Table structure:
-
-```text
-┌─────────────────────────┐
-│       messages          │
-├─────────────────────────┤
-│ id       SERIAL  PK     │
-│ message  TEXT    NOT NULL│
-└─────────────────────────┘
-```
-
-Example:
-
-```text
- id | message
-----+-------------------------------
-  1 | Hello from PostgreSQL
-  2 | Hello from Python
-  3 | Learning Docker
-```
-
----
-
-# 🔐 Environment Configuration
-
-Database configuration is stored in:
-
-```text
-.env
-```
-
-Example:
+`.env` (used automatically by `python-dotenv`):
 
 ```env
 POSTGRES_HOST=localhost
@@ -320,923 +84,333 @@ POSTGRES_USER=learning_user
 POSTGRES_PASSWORD=learning_password
 ```
 
-⚠️ **Do not commit `.env` to Git.**
+⚠️ Don't commit `.env` — it's already in `.gitignore`.
 
-Add it to `.gitignore`:
+### 🌐 Testing it (once the backend from step 3 is running)
 
-```gitignore
-.env
-.venv/
-__pycache__/
-.pytest_cache/
-```
+You don't need the GUI to try the API — the backend alone is enough.
 
----
+**Browser:**
 
-# 🐍 Python Environment
+- **http://localhost:8000/docs** — Swagger UI, interactive: expand an endpoint, "Try it
+  out", fill the body, "Execute".
+- **http://localhost:8000/redoc** — read-only API reference.
+- **http://localhost:8000/** — plain health check (`{"message": "..."}`).
 
-This project uses:
-
-```text
-uv
-```
-
-instead of `pip`.
-
-`uv` manages:
-
-* 🐍 Python environment
-* 📦 Dependencies
-* 🔒 Lock file
-* ⚡ Fast package installation
-
-The project has a single:
-
-```text
-pyproject.toml
-```
-
-at the project root.
-
-```text
-Docker-Learning-App/
-│
-└── pyproject.toml
-```
-
-There are **no separate `pyproject.toml` files** for the backend or GUI.
-
----
-
-# 📦 Install Dependencies
-
-From the project root:
+**curl:**
 
 ```bash
-cd ~/MyWorkSpace/Docker-Learning-App
+curl http://localhost:8000/                 # health check
+curl http://localhost:8000/messages          # GET all messages
+
+curl -X POST http://localhost:8000/messages \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello Docker"}'           # CREATE
+
+curl -X PUT http://localhost:8000/messages/1 \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Updated via curl"}'       # UPDATE id=1
+
+curl -X DELETE http://localhost:8000/messages/1   # DELETE id=1
 ```
 
-Install/synchronize dependencies:
+**Database (Postgres directly, port 5432):**
+
+Useful to confirm what the API actually wrote, independent of the app:
 
 ```bash
-uv sync
+psql -U learning_user -d docker_learning -h localhost -p 5432
 ```
-
-If adding a new dependency:
-
-```bash
-uv add <package>
-```
-
-Example:
-
-```bash
-uv add requests
-```
-
-For development dependencies:
-
-```bash
-uv add --dev pytest
-```
-
----
-
-# 🐘 PostgreSQL Setup
-
-## Check PostgreSQL
-
-```bash
-psql --version
-```
-
-Check the PostgreSQL service:
-
-```bash
-sudo service postgresql status
-```
-
-Start PostgreSQL if required:
-
-```bash
-sudo service postgresql start
-```
-
----
-
-## Connect as PostgreSQL administrator
-
-```bash
-sudo -u postgres psql
-```
-
----
-
-## Create database
-
 ```sql
-CREATE DATABASE docker_learning;
+SELECT * FROM messages;
 ```
 
 ---
 
-## Create application user
+## 🐳 Run with Docker
 
+Each layer runs in its **own container**: `db`, `backend`, `gui`. Nothing about the code
+above changes — the same `.env` file is reused, and `docker-compose.yml` just points
+`backend`/`gui` at the `db` service by container name instead of `localhost`.
+
+> ⚠️ First time only: run `uv lock` locally after pulling this change (dependencies were
+> just split by service — see "What each Dockerfile does" below) so `uv.lock` matches
+> `pyproject.toml` before building images.
+
+### 🔁 Day-to-day workflow (read this first)
+
+You only need `--build` when Docker actually needs to redo work — a fresh image, changed
+code, or changed dependencies. Once images exist, starting and stopping the app is just:
+
+```bash
+docker compose up -d     # start everything in the background
+docker compose down      # stop everything
+```
+
+That pair is what you'll use almost every day. `--build` is the exception, not the rule:
+
+| Situation                                                        | Command                     |
+| ------------------------------------------------------------------ | ---------------------------- |
+| **Very first run**, or you pulled new code                       | `docker compose up -d --build` |
+| You edited `backend/*.py`, `gui/*.py`, `database/*.py`             | `docker compose up -d --build` |
+| You edited `pyproject.toml`, `uv.lock`, or a `Dockerfile`          | `docker compose up -d --build` |
+| Just starting your day, nothing changed since last time            | `docker compose up -d`      |
+| Done for the day                                                  | `docker compose down`       |
+| You changed `docker-compose.yml` only (ports, env vars, volumes)   | `docker compose up -d` (no rebuild needed — compose re-reads the file) |
+
+Why a rebuild is needed for code changes: your source files are **copied into the image**
+at build time (`COPY backend/ ./backend/`, etc.), not mounted live. `docker compose up`
+without `--build` reuses the image exactly as it was last built, so it won't see edits
+until you rebuild.
+
+### Run everything
+
+```bash
+docker compose up -d --build   # first time / after code changes: build + start, detached
+docker compose up -d           # every other time: just start, detached
+docker compose up --build      # attached instead of -d — logs stream in this terminal
+```
+
+- Backend → http://localhost:8000 (docs at `/docs`)
+- Postgres → `localhost:5432` (same credentials as `.env`)
+- GUI window opens on your screen (see X11 note below)
+
+### 🌐 Testing the API — Browser & curl
+
+Once `db` + `backend` are up (`docker compose up -d db backend`), you don't need the GUI
+to exercise the API.
+
+> **Port depends on `BACKEND_HOST_PORT`.** The URLs below assume you left it unset
+> (default `8000`). If you set `BACKEND_HOST_PORT=8001` (e.g. to run alongside the native
+> app — see "Running native + Docker at the same time" further down), substitute `8001`
+> for `8000` everywhere below.
+
+**Browser (Swagger UI):**
+
+Open **http://localhost:8000/docs** — FastAPI's interactive docs. Expand any endpoint,
+click "Try it out", fill in the body, and click "Execute". An alternative read-only view
+is at **http://localhost:8000/redoc**, and a plain health check is at
+**http://localhost:8000/**. FastAPI serves both `/docs` and `/redoc` automatically — the
+project doesn't disable either — so if one loads, the other will too (see
+Troubleshooting below if *neither* loads).
+
+**curl:**
+
+```bash
+# health check
+curl http://localhost:8000/
+
+# GET all messages
+curl http://localhost:8000/messages
+
+# CREATE a message
+curl -X POST http://localhost:8000/messages \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello Docker"}'
+
+# UPDATE message with id=1
+curl -X PUT http://localhost:8000/messages/1 \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Updated via curl"}'
+
+# DELETE message with id=1
+curl -X DELETE http://localhost:8000/messages/1
+```
+
+`GET`/`POST` return JSON you can pretty-print by piping to `python3 -m json.tool` or `jq`.
+
+**Database (Postgres directly):**
+
+Same idea as the local setup, just note the port depends on `POSTGRES_HOST_PORT`
+(default `5432`, unless you changed it to avoid a conflict with a native Postgres):
+
+```bash
+psql -U learning_user -d docker_learning -h localhost -p 5432
+```
 ```sql
-CREATE USER learning_user
-WITH PASSWORD 'learning_password';
+SELECT * FROM messages;
 ```
 
-Grant database access:
-
-```sql
-GRANT ALL PRIVILEGES
-ON DATABASE docker_learning
-TO learning_user;
-```
-
-Grant schema permissions:
-
-```sql
-\c docker_learning
-
-GRANT USAGE, CREATE
-ON SCHEMA public
-TO learning_user;
-```
-
----
-
-# 🗃️ Create Database Table
-
-Connect as the application user:
+Or without installing `psql` on the host at all — run it inside the `db` container:
 
 ```bash
-psql \
-    -U learning_user \
-    -d docker_learning \
-    -h localhost
+docker compose exec db psql -U learning_user -d docker_learning -c "SELECT * FROM messages;"
 ```
 
-Then:
-
-```sql
-CREATE TABLE IF NOT EXISTS messages (
-    id SERIAL PRIMARY KEY,
-    message TEXT NOT NULL
-);
-```
-
-Verify:
-
-```sql
-\dt
-```
-
-Check the table:
-
-```sql
-\d messages
-```
-
----
-
-# 🧪 Database Tests
-
-Database tests are located at:
-
-```text
-tests/test_database.py
-```
-
-Run all tests:
+### Run containers independently
 
 ```bash
-uv run python -m pytest
+docker compose up -d db          # just the database
+docker compose up -d backend     # backend (+ starts db if not running)
+docker compose up gui            # gui (+ starts backend/db if not running)
 ```
 
-Run with verbose output:
+`-d` runs a service in the background (detached) so you get your terminal back — useful
+for `db`/`backend`, which you'll usually leave running while you iterate on the GUI or
+poke the API from a browser/curl. `gui` is left attached above since it's an interactive
+desktop window, not something you'd want backgrounded.
+
+Each service can also be stopped, rebuilt, or inspected on its own:
 
 ```bash
-uv run python -m pytest -v
+docker compose stop gui
+docker compose build backend       # rebuild just this one image
+docker compose logs -f backend
+docker compose exec backend uv run python -m pytest -v   # tests against the db container
 ```
 
-Example:
-
-```text
-============================= test session starts =============================
-
-tests/test_database.py::test_get_connection PASSED
-tests/test_database.py::test_create_message PASSED
-tests/test_database.py::test_get_messages PASSED
-tests/test_database.py::test_create_and_get_message PASSED
-tests/test_database.py::test_create_multiple_messages PASSED
-tests/test_database.py::test_update_message PASSED
-tests/test_database.py::test_update_nonexistent_message PASSED
-tests/test_database.py::test_delete_message PASSED
-tests/test_database.py::test_delete_nonexistent_message PASSED
-
-============================== 9 passed ==============================
-```
-
-Current database test coverage includes:
-
-```text
-🔌 Connection
-➕ Create
-📥 Read
-✏️ Update
-🗑️ Delete
-🔁 Multiple records
-❌ Non-existent update
-❌ Non-existent delete
-```
-
----
-
-# ⚡ Run the Backend
-
-From the project root:
+### Stop / clean up
 
 ```bash
-uv run uvicorn backend.main:app --reload
+docker compose down       # stop containers
+docker compose down -v    # also delete the postgres volume (wipes data)
 ```
 
-The backend runs at:
+### 🔌 How the services find each other (`.env` vs `docker-compose.yml`)
+
+There are two *different* URLs the GUI/backend can use to reach each other, depending on
+whether you're running natively or in Docker — this is why you won't find `BACKEND_URL`
+in `.env`: it's set only in `docker-compose.yml`, not shared config like the DB
+credentials are.
+
+| Variable         | Native (`uv run ...`)                          | Docker Compose                                   |
+| ----------------- | ------------------------------------------------ | --------------------------------------------------- |
+| `POSTGRES_HOST`  | `localhost` (from `.env`)                        | `db` — overridden in `docker-compose.yml`          |
+| `BACKEND_URL`    | `http://127.0.0.1:8000` (default in `gui/main.py`, `.env` not involved) | `http://backend:8000` — set in `docker-compose.yml` |
+
+- **`http://backend:8000`** only works *from inside another container on the same Docker
+  network* (`app_network`). It's Docker's built-in DNS: any container can reach service
+  `backend` by that service's name from `docker-compose.yml`. It will **not** work if you
+  paste it into your host browser or a native `curl` — from your machine, the backend is
+  always `http://localhost:8000` (because `docker-compose.yml` publishes port 8000 to
+  the host).
+- **You don't need to add `BACKEND_URL` to `.env`.** It only matters to the `gui`
+  container, is already set correctly in `docker-compose.yml`, and its default
+  (`http://127.0.0.1:8000`) already covers running the GUI natively.
+
+### 🖥️ GUI container note (X11)
+
+The GUI is a desktop app, so its container needs access to a display server:
+
+- **Linux:** run `xhost +local:docker` once per session before `docker compose up gui`.
+- **macOS/Windows:** install an X server (XQuartz / VcXsrv), point `DISPLAY` at it, and
+  adjust the `gui` service's `volumes`/`environment` in `docker-compose.yml` accordingly.
+- **Simplest option:** run `db` + `backend` in Docker and the GUI natively
+  (`uv run python gui/main.py`) — it already respects `BACKEND_URL` (defaults to
+  `http://127.0.0.1:8000`, matching the backend's published port).
+
+### What each Dockerfile does
+
+- `backend/Dockerfile` — `python:3.13-slim` + `uv`, installs `libpq5` (required by
+  `psycopg` at runtime), installs only the `backend` dependency group, copies only
+  `backend/` + `database/`, runs `uvicorn`.
+- `gui/Dockerfile` — same base, adds the Qt/X11 runtime libraries PySide6 needs,
+  installs only the `gui` dependency group, copies only `gui/`, runs `python gui/main.py`.
+
+**Dependencies are split by service**, not shared wholesale. `pyproject.toml` still has
+one `[project]` section (one project, one lockfile — that part of the original design is
+worth keeping), but the actual packages are declared as two independent
+`[project.optional-dependencies]` groups:
+
+```toml
+[project.optional-dependencies]
+backend = ["fastapi", "psycopg", "python-dotenv", "uvicorn[standard]"]
+gui = ["pyside6", "requests"]
+```
+
+Each Dockerfile installs only the extra it needs (`uv sync --extra backend` /
+`uv sync --extra gui`), so:
+
+- the **backend image never contains PySide6/Qt** — it's a pure API image,
+- the **GUI image never contains FastAPI/psycopg/uvicorn** — it's a pure client image,
+- either one can be built, shipped, and run **standalone**, independent of the other.
+
+For local full-stack development you still get everything in one environment with
+`uv sync --all-extras`; for a single service, `uv sync --extra backend` (or `--extra gui`)
+mirrors exactly what its Docker image installs.
+
+> ⚠️ **One-time step:** since the dependency groups changed, run `uv lock` once to
+> regenerate `uv.lock` before your first `docker compose up --build` (or local `uv sync`).
+
+### Docker concepts this adds on top of the local setup
 
 ```text
-http://127.0.0.1:8000
+📦 Image           → backend/Dockerfile, gui/Dockerfile, postgres:16-alpine
+🚢 Container        → db, backend, gui (one process each)
+🌐 Network          → app_network (containers reach each other by service name)
+💾 Volume           → db_data (Postgres data survives container restarts)
+🎼 Compose          → docker-compose.yml wires all three together
 ```
 
-or:
+### 🩺 Troubleshooting
 
-```text
-http://localhost:8000
-```
+**`localhost:5432` (or `:8000`) refuses to connect:**
 
----
+1. Check the containers are actually running: `docker compose ps` — status should say
+   `running` (or `healthy` for `db`), not `Exit` / `Restarting`.
+2. Check logs for the failing service: `docker compose logs db` or `docker compose logs backend`.
+3. **Most common cause:** a Postgres already running natively on your machine (e.g. from
+   the "Run Locally" section above, or a system service) is already using port 5432, so
+   Docker can't bind it. Check for the conflict:
+   ```bash
+   sudo lsof -i :5432        # Linux/macOS
+   # or, on Windows: netstat -ano | findstr :5432
+   ```
+   Either stop the native service (`sudo service postgresql stop`), or run Docker on a
+   different host port instead — see "Running native + Docker at the same time" below.
+4. If you just ran `docker compose up -d` and it's been only a couple of seconds, `db`
+   may still be starting — `backend` waits for it (`depends_on: condition:
+   service_healthy`), so give it a moment and re-check `docker compose ps`.
 
-# 📚 FastAPI Documentation
+**`/docs` or `/redoc` won't load:**
 
-FastAPI automatically provides interactive API documentation.
+Same checklist as above — this is almost always the backend container not being up yet
+or not being reachable, not the docs feature itself (nothing in this project disables
+`/redoc`). Confirm with `docker compose logs backend`, and once you see uvicorn's
+"Application startup complete", retry the browser.
 
-Open:
+### 🔀 Running native + Docker at the same time (different ports)
 
-```text
-http://localhost:8000/docs
-```
-
-You'll see:
-
-```text
-GET     /messages
-POST    /messages
-PUT     /messages/{message_id}
-DELETE  /messages/{message_id}
-```
-
-There is also an alternative documentation interface:
-
-```text
-http://localhost:8000/redoc
-```
-
----
-
-# 🌐 API Endpoints
-
-## 📥 GET Messages
-
-```http
-GET /messages
-```
-
-Example response:
-
-```json
-[
-    {
-        "id": 1,
-        "message": "Hello Docker"
-    },
-    {
-        "id": 2,
-        "message": "Learning PostgreSQL"
-    }
-]
-```
-
----
-
-## ➕ CREATE Message
-
-```http
-POST /messages
-```
-
-Request:
-
-```json
-{
-    "message": "Hello Docker"
-}
-```
-
-Response:
-
-```json
-{
-    "id": 3,
-    "message": "Hello Docker"
-}
-```
-
----
-
-## ✏️ UPDATE Message
-
-```http
-PUT /messages/3
-```
-
-Request:
-
-```json
-{
-    "message": "Learning Docker Compose"
-}
-```
-
-Response:
-
-```json
-{
-    "id": 3,
-    "message": "Learning Docker Compose"
-}
-```
-
----
-
-## 🗑️ DELETE Message
-
-```http
-DELETE /messages/3
-```
-
-Response:
-
-```json
-{
-    "id": 3,
-    "message": "Message deleted successfully."
-}
-```
-
----
-
-# 🖥️ Run the GUI
-
-Make sure PostgreSQL is running.
-
-Also make sure the FastAPI backend is running.
-
-### Terminal 1 — Backend
+This is a port-mapping choice, not a limit of the app — `docker-compose.yml` just
+defaults to publishing the same ports the native app uses (5432, 8000), for convenience.
+Change the **host** side of the mapping and both can run simultaneously without touching
+each other:
 
 ```bash
-cd ~/MyWorkSpace/Docker-Learning-App
-
-uv run uvicorn backend.main:app --reload
+# either edit .env (uncomment/add these two lines), or pass them inline like this:
+POSTGRES_HOST_PORT=5433 BACKEND_HOST_PORT=8001 docker compose up -d --build
 ```
 
-### Terminal 2 — GUI
+Now:
+
+| Service              | Native                          | Docker (with the ports above)     |
+| --------------------- | ---------------------------------- | ------------------------------------ |
+| Postgres              | `localhost:5432` (unchanged)       | `localhost:5433`                    |
+| Backend               | `localhost:8000` (unchanged)       | `localhost:8001` — docs at `localhost:8001/docs` |
+
+Nothing internal changes: inside Docker, `backend` still talks to `db` on port `5432`
+(the container's *internal* port never moves), and the `gui` container still reaches the
+backend at `http://backend:8000` — both are container-to-container, unrelated to which
+host port you chose. The only other thing to update is if you run the **GUI natively**
+against the **Dockerized** backend on an alternate port — point it at the new port
+explicitly:
 
 ```bash
-cd ~/MyWorkSpace/Docker-Learning-App
-
-uv run python gui/main.py
+BACKEND_URL=http://localhost:8001 uv run python gui/main.py
 ```
 
 ---
 
-# 🖥️ GUI Workflow
-
-The GUI provides four buttons:
-
-```text
-┌──────────────────────────────────────────┐
-│       🐳 Docker Learning App             │
-│                                          │
-│ Message:                                 │
-│ ┌──────────────────────────────────────┐ │
-│ │ Hello Docker                         │ │
-│ └──────────────────────────────────────┘ │
-│                                          │
-│ [📥 GET] [➕ CREATE] [✏️ UPDATE] [🗑️ DELETE] │
-│                                          │
-│ 📋 All Messages                          │
-│ ┌──────────────────────────────────────┐ │
-│ │ 1 | Hello PostgreSQL                 │ │
-│ │ 2 | Learning Python                  │ │
-│ │ 3 | Hello Docker                     │ │
-│ └──────────────────────────────────────┘ │
-│                                          │
-│ Status: ✅ Loaded 3 message(s)           │
-└──────────────────────────────────────────┘
-```
-
----
-
-# 🔄 GUI Request Flow
-
-## 📥 GET
-
-```text
-🖥️ User
-  │
-  │ Click 📥 GET
-  ▼
-🖥️ PySide6
-  │
-  │ GET /messages
-  ▼
-⚡ FastAPI
-  │
-  │ SELECT
-  ▼
-🐘 PostgreSQL
-  │
-  │ rows
-  ▼
-⚡ FastAPI
-  │
-  │ JSON
-  ▼
-🖥️ PySide6
-  │
-  ▼
-📋 Display messages
-```
-
----
-
-## ➕ CREATE
-
-```text
-🖥️ User
-  │
-  │ Enter message
-  │
-  │ Click ➕ CREATE
-  ▼
-🖥️ PySide6
-  │
-  │ POST /messages
-  ▼
-⚡ FastAPI
-  │
-  │ INSERT
-  ▼
-🐘 PostgreSQL
-  │
-  │ New record
-  ▼
-⚡ FastAPI
-  │
-  ▼
-🖥️ PySide6
-  │
-  ▼
-📋 Refresh messages
-```
-
----
-
-## ✏️ UPDATE
-
-```text
-🖥️ User
-  │
-  │ Select message
-  │ Edit text
-  │
-  │ Click ✏️ UPDATE
-  ▼
-🖥️ PySide6
-  │
-  │ PUT /messages/{id}
-  ▼
-⚡ FastAPI
-  │
-  │ UPDATE
-  ▼
-🐘 PostgreSQL
-  │
-  ▼
-⚡ FastAPI
-  │
-  ▼
-🖥️ PySide6
-  │
-  ▼
-📋 Refresh messages
-```
-
----
-
-## 🗑️ DELETE
-
-```text
-🖥️ User
-  │
-  │ Select message
-  │
-  │ Click 🗑️ DELETE
-  ▼
-🖥️ PySide6
-  │
-  │ DELETE /messages/{id}
-  ▼
-⚡ FastAPI
-  │
-  │ DELETE
-  ▼
-🐘 PostgreSQL
-  │
-  ▼
-⚡ FastAPI
-  │
-  ▼
-🖥️ PySide6
-  │
-  ▼
-📋 Refresh messages
-```
-
----
-
-# 🧪 Testing Architecture
-
-The project currently tests the database layer.
-
-```text
-                 🧪 Pytest
-                    │
-                    ▼
-             database/database.py
-                    │
-                    │ psycopg
-                    ▼
-             🐘 PostgreSQL
-```
-
-Future testing layers:
-
-```text
-                    🧪 Tests
-                       │
-          ┌────────────┼────────────┐
-          │            │            │
-          ▼            ▼            ▼
-     🐘 Database    ⚡ API       🖥️ GUI
-       Tests        Tests        Tests
-```
-
----
-
-# 🛠️ Development Workflow
-
-A typical development session:
-
-```text
-1️⃣ Start PostgreSQL
-       │
-       ▼
-2️⃣ Start FastAPI
-       │
-       ▼
-3️⃣ Start PySide6 GUI
-       │
-       ▼
-4️⃣ Test CRUD operations
-       │
-       ▼
-5️⃣ Run automated tests
-```
-
-Commands:
-
-### 1️⃣ PostgreSQL
+## 🧪 Tests
 
 ```bash
-sudo service postgresql start
-```
-
-### 2️⃣ Backend
-
-```bash
-uv run uvicorn backend.main:app --reload
-```
-
-### 3️⃣ GUI
-
-Open another terminal:
-
-```bash
-uv run python gui/main.py
-```
-
-### 4️⃣ Tests
-
-```bash
-uv run python -m pytest -v
+uv sync --extra backend                              # if not already installed
+uv run python -m pytest -v                            # local
+docker compose exec backend uv run python -m pytest -v # inside the backend container
 ```
 
 ---
 
-# 🛑 Stop the Application
+## ⭐ Philosophy
 
-## Stop FastAPI
-
-In the backend terminal:
-
-```text
-Ctrl + C
-```
-
-## Stop GUI
-
-In the GUI terminal:
-
-```text
-Ctrl + C
-```
-
-The GUI has been configured to handle `Ctrl+C` and terminate gracefully.
-
-## Stop PostgreSQL
-
-```bash
-sudo service postgresql stop
-```
-
----
-
-# 🧠 What We Have Learned So Far
-
-This project currently demonstrates:
-
-### 🐍 Python
-
-* Python project structure
-* Virtual environments
-* Dependencies
-* `uv`
-
-### 🖥️ PySide6
-
-* GUI windows
-* Widgets
-* Buttons
-* Signals and slots
-* Event handling
-* HTTP requests from GUI
-
-### ⚡ FastAPI
-
-* REST API
-* Routes
-* HTTP methods
-* JSON
-* Request models
-* Response handling
-* API documentation
-
-### 🐘 PostgreSQL
-
-* Database
-* Schema
-* Tables
-* SQL
-* CRUD operations
-* Database users
-* Permissions
-
-### 🌐 Application Communication
-
-```text
-GUI
- │
- │ HTTP / JSON
- ▼
-FastAPI
- │
- │ SQL
- ▼
-PostgreSQL
-```
-
-### 🧪 Testing
-
-* Pytest
-* Database integration tests
-* CRUD testing
-* Positive and negative test cases
-
----
-
-# 🐳 Docker — Next Stage
-
-Docker has **not yet been introduced** into the current application.
-
-The current application runs directly on the development environment:
-
-```text
-🖥️ Windows
-    │
-    ▼
-🐧 WSL / Ubuntu
-    │
-    ├── 🖥️ PySide6
-    │
-    ├── ⚡ FastAPI
-    │
-    └── 🐘 PostgreSQL
-```
-
-The next stage will introduce Docker.
-
----
-
-# 🐳 Target Docker Architecture
-
-After Dockerization, we will move toward:
-
-```text
-                       🎼 Docker Compose
-                              │
-              ┌───────────────┼───────────────┐
-              │               │               │
-              ▼               ▼               ▼
-       🖥️ GUI Container  ⚡ Backend       🐘 PostgreSQL
-                            Container          Container
-              │               │               │
-              └───────────────┼───────────────┘
-                              │
-                         Docker Network
-```
-
-The important learning progression will be:
-
-```text
-1️⃣ Understand application without Docker
-        ↓
-2️⃣ Dockerize PostgreSQL
-        ↓
-3️⃣ Dockerize FastAPI
-        ↓
-4️⃣ Understand Docker networking
-        ↓
-5️⃣ Understand volumes
-        ↓
-6️⃣ Introduce Docker Compose
-        ↓
-7️⃣ Run the complete application
-```
-
----
-
-# 🎓 Learning Objective
-
-The final goal is not just to make the application run.
-
-The goal is to understand **why containers are useful**.
-
-We will compare:
-
-```text
-❌ Without Docker
-
-"Install PostgreSQL"
-"Configure PostgreSQL"
-"Install Python"
-"Install dependencies"
-"Configure environment"
-"Start backend"
-"Start GUI"
-```
-
-with:
-
-```text
-🐳 With Docker
-
-docker compose up
-```
-
-while understanding what Docker is actually doing behind the scenes.
-
----
-
-# 📌 Current Status
-
-```text
-✅ Project created with uv
-✅ Root pyproject.toml
-✅ Backend created
-✅ FastAPI API created
-✅ PostgreSQL configured
-✅ Database layer created
-✅ CRUD implemented
-✅ GUI created
-✅ GUI CRUD operations implemented
-✅ GUI logging added
-✅ Ctrl+C support added
-✅ Database tests added
-⬜ API tests
-⬜ GUI tests
-⬜ Dockerfile
-⬜ Docker image
-⬜ Docker container
-⬜ Docker networking
-⬜ Docker volume
-⬜ Docker Compose
-```
-
----
-
-# 🚀 Quick Start
-
-For an already-configured development environment:
-
-### Start PostgreSQL
-
-```bash
-sudo service postgresql start
-```
-
-### Start Backend
-
-```bash
-uv run uvicorn backend.main:app --reload
-```
-
-### Start GUI
-
-In another terminal:
-
-```bash
-uv run python gui/main.py
-```
-
-### Run Tests
-
-```bash
-uv run python -m pytest -v
-```
-
-### API Documentation
-
-Open:
-
-```text
-http://localhost:8000/docs
-```
-
----
-
-# 🐳 Coming Next
-
-**Dockerize this application step by step.**
-
-We'll learn:
-
-```text
-🐳 What is Docker?
-📦 What is an Image?
-🚢 What is a Container?
-🌐 What is a Docker Network?
-💾 What is a Docker Volume?
-📝 What is a Dockerfile?
-🎼 What is Docker Compose?
-```
-
-Then we'll transform:
-
-```text
-🖥️ GUI
-   ↓
-⚡ FastAPI
-   ↓
-🐘 PostgreSQL
-```
-
-into a reproducible Docker-based application.
-
----
-
-## ⭐ Project Philosophy
-
-> **Keep it small. Understand every layer. Then containerize it.**
-
-This project is intentionally simple so that Docker concepts can be learned through a real application rather than isolated examples.
+Keep it small, understand every layer, then containerize it.
